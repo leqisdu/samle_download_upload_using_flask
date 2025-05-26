@@ -1,98 +1,109 @@
- <!DOCTYPE html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>File Upload with Progress</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Upload</title>
     <style>
-      /* 简单美化 */
-      #progressContainer { margin-top: 1em; display: none; }
-      #progressText { margin-left: 0.5em; }
+        #progress-container {
+            width: 80%; /* Adjust width for better appearance */
+            max-width: 400px; /* Set a maximum width */
+            background-color: #e0e0e0; /* Light background color */
+            border-radius: 10px; /* Rounded corners */
+            overflow: hidden; /* Ensure rounded corners are visible */
+            margin-top: 10px;
+            display: none; /* Initially hidden */
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); /* Add shadow for depth */
+            position: relative; /* Position relative for inner elements */
+        }
+        #progress-bar {
+            width: 0;
+            height: 20px;
+            background-color: #4caf50; /* Green color */
+            transition: width 0.3s ease; /* Smooth transition */
+        }
+        #progress-percent {
+            position: absolute; /* Position absolute to place it over the container */
+            right: 10px; /* Align to the right */
+            top: 0;
+            height: 20px;
+            line-height: 20px; /* Center text vertically */
+            font-weight: bold;
+            color: #333; /* Dark text color */
+        }
     </style>
 </head>
 <body>
-    <h2>Upload a File</h2>
-
-    {% with messages = get_flashed_messages() %}
-      {% if messages %}
-        <ul style="color: red;">
-          {% for message in messages %}
-            <li>{{ message }}</li>
-          {% endfor %}
-        </ul>
-      {% endif %}
-    {% endwith %}
-
-    <!-- 表单只留 file input 和提交按钮，action/method/enctype 由 JS 控制 -->
-    <form id="uploadForm">
-        <input type="file" name="file" id="fileInput" required />
-        <button type="submit">Upload</button>
-    </form>
-
-    <!-- 进度条区域 -->
-    <div id="progressContainer">
-      <progress id="progressBar" value="0" max="100" style="width:300px;"></progress>
-      <span id="progressText">0%</span>
+    <h1>Upload Files</h1>
+    <input type="file" id="file-input" multiple>
+    <button onclick="uploadFiles()">Upload</button>
+    <div id="progress-container">
+        <div id="progress-bar"></div>
+        <div id="progress-percent"></div> <!-- Move inside the container -->
     </div>
 
-    <hr>
-    <h3>Uploaded Files</h3>
-    <ul>
-      {% for file in files %}
-        <li>
-          {{ file }} -
-          <a href="{{ url_for('download_file', filename=file) }}">⬇ Download</a>
-        </li>
-      {% endfor %}
-    </ul>
+    <h2>Uploaded Files</h2>
+    <ul id="uploaded-files"></ul>
 
     <script>
-    document.getElementById('uploadForm').addEventListener('submit', function(e) {
-      e.preventDefault();
+        function uploadFiles() {
+            const files = document.getElementById('file-input').files;
+            const formData = new FormData();
+            for (let i = 0; i < files.length; i++) {
+                formData.append('files[]', files[i]);
+            }
 
-      const fileInput = document.getElementById('fileInput');
-      if (!fileInput.files.length) return;
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/upload', true);
 
-      const formData = new FormData();
-      formData.append('file', fileInput.files[0]);
+            // Show progress bar when upload starts
+            document.getElementById('progress-container').style.display = 'block';
 
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/', true);
+            xhr.upload.onprogress = function(event) {
+                if (event.lengthComputable) {
+                    const percentComplete = (event.loaded / event.total) * 100;
+                    document.getElementById('progress-bar').style.width = percentComplete + '%';
+                    document.getElementById('progress-percent').textContent = Math.round(percentComplete) + '%';
+                }
+            };
 
-      // 上传开始前显示进度条
-      const progContainer = document.getElementById('progressContainer');
-      const progBar = document.getElementById('progressBar');
-      const progText = document.getElementById('progressText');
-      progContainer.style.display = 'block';
-      progBar.value = 0;
-      progText.textContent = '0%';
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    const response = JSON.parse(xhr.responseText);
+                    loadUploadedFiles();  // Refresh the uploaded files list
 
-      // 监听进度
-      xhr.upload.onprogress = function(evt) {
-        if (evt.lengthComputable) {
-          const percent = Math.round(evt.loaded / evt.total * 100);
-          progBar.value = percent;
-          progText.textContent = percent + '%';
+                    if (response.duplicates.length > 0) {
+                        alert('Duplicate files detected: ' + response.duplicates.join(', '));
+                    }
+
+                    // Hide progress bar after upload completes
+                    document.getElementById('progress-container').style.display = 'none';
+                    document.getElementById('progress-bar').style.width = '0%';
+                    document.getElementById('progress-percent').textContent = '';
+                }
+            };
+
+            xhr.send(formData);
         }
-      };
 
-      // 上传完成
-      xhr.onload = function() {
-        if (xhr.status === 200) {
-          // 上传成功，刷新页面显示新列表和 flash
-          window.location.reload();
-        } else {
-          alert('Upload failed: ' + xhr.responseText);
-          progContainer.style.display = 'none';
+        function loadUploadedFiles() {
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', '/files', true);
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    const files = JSON.parse(xhr.responseText);
+                    const fileList = document.getElementById('uploaded-files');
+                    fileList.innerHTML = '';
+                    files.forEach(file => {
+                        fileList.innerHTML += `<li>${file} - <a href="/download/${file}">Download</a></li>`;
+                    });
+                }
+            };
+            xhr.send();
         }
-      };
 
-      xhr.onerror = function() {
-        alert('Upload error.');
-        progContainer.style.display = 'none';
-      };
-
-      xhr.send(formData);
-    });
+        // Load the uploaded files when the page loads
+        window.onload = loadUploadedFiles;
     </script>
 </body>
 </html>
